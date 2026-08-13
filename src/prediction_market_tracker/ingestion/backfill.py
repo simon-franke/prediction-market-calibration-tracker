@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class HistoricalPriceProvider(Protocol):
-    async def list_markets(self, *, active: bool) -> AsyncIterator[Market]: ...
+    async def list_recently_resolved_markets(self, *, limit: int) -> AsyncIterator[Market]: ...
 
     async def price_history(
         self, market: Market, *, start: datetime, end: datetime, interval: str
@@ -41,9 +41,7 @@ class HistoricalBackfill:
             raise ValueError("limit must be at least one")
 
         markets_seen = resolutions_saved = snapshots_saved = 0
-        async for market in self._provider.list_markets(active=False):
-            if markets_seen >= limit:
-                break
+        async for market in self._provider.list_recently_resolved_markets(limit=limit):
             markets_seen += 1
             await self._repository.upsert_market(market)
 

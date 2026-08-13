@@ -58,6 +58,50 @@ class PolymarketProvider:
                 return
             offset += len(items)
 
+    async def list_recently_resolved_markets(self, *, limit: int) -> AsyncIterator[Market]:
+        """Yield the newest resolved markets first, up to ``limit`` markets.
+
+        The offset-based Gamma endpoint begins with Polymarket's oldest markets.
+        Those predate the CLOB price-history API, so historical backfills must use
+        the keyset endpoint ordered by resolution time instead.
+        """
+        if limit < 1:
+            return
+
+        remaining = limit
+        cursor: str | None = None
+        while remaining:
+            params: dict[str, str | int] = {
+                "closed": "true",
+                "limit": min(remaining, 100),
+                "order": "closedTime",
+                "ascending": "false",
+            }
+            if cursor is not None:
+                params["after_cursor"] = cursor
+
+            response = await self._client.get(
+                f"{self.gamma_url}/markets/keyset", params=params
+            )
+            response.raise_for_status()
+            payload = response.json()
+            items, _ = self._items_from_response(payload)
+
+            yielded = 0
+            for item in items:
+                market = self._market_from_payload(item)
+                if market is not None:
+                    yield market
+                    remaining -= 1
+                    yielded += 1
+                    if not remaining:
+                        return
+
+            next_cursor = payload.get("next_cursor") if isinstance(payload, dict) else None
+            if not isinstance(next_cursor, str) or not next_cursor or not yielded:
+                return
+            cursor = next_cursor
+
     async def current_snapshot(self, market: Market) -> ForecastSnapshot | None:
         if market.yes_outcome_id is None:
             return None
@@ -90,14 +134,21 @@ class PolymarketProvider:
         if market.yes_outcome_id is None:
             return []
 
+        params: dict[str, str | int] = {
+            "market": market.yes_outcome_id,
+            "startTs": int(start.timestamp()),
+            "endTs": int(end.timestamp()),
+            "interval": interval,
+        }
+        fidelity = {"1m": 1, "1h": 60, "6h": 360, "1d": 1_440, "1w": 10_080}.get(
+            interval
+        )
+        if fidelity is not None:
+            params["fidelity"] = fidelity
+
         response = await self._client.get(
             f"{self.clob_url}/prices-history",
-            params={
-                "market": market.yes_outcome_id,
-                "startTs": int(start.timestamp()),
-                "endTs": int(end.timestamp()),
-                "interval": interval,
-            },
+            params=params,
         )
         response.raise_for_status()
 

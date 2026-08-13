@@ -22,8 +22,8 @@ class FakeHistoricalProvider:
         self.snapshots = snapshots
         self.history_interval: str | None = None
 
-    async def list_markets(self, *, active: bool):
-        if not active:
+    async def list_recently_resolved_markets(self, *, limit: int):
+        if limit > 0:
             yield self.market
 
     async def price_history(self, market: Market, *, start, end, interval: str):

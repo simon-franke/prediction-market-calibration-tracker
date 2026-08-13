@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from prediction_market_tracker.domain import MarketType, ResolutionOutcome
+import httpx
+
+from prediction_market_tracker.domain import Market, MarketStatus, MarketType, ResolutionOutcome
 from prediction_market_tracker.providers.polymarket import PolymarketProvider
 
 
@@ -50,3 +52,59 @@ async def test_resolution_uses_canonical_yes_no_outcomes() -> None:
 def test_rejects_out_of_range_probability() -> None:
     assert PolymarketProvider._decimal("not-a-number") is None
     assert Decimal("1.2") > Decimal("1")
+
+
+async def test_recently_resolved_markets_uses_keyset_ordering() -> None:
+    raw_market = {
+        "id": "newest",
+        "question": "Will this have usable history?",
+        "outcomes": ["Yes", "No"],
+        "clobTokenIds": ["yes-token", "no-token"],
+        "closed": True,
+        "closedTime": "2026-08-13T12:00:00Z",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/markets/keyset"
+        assert request.url.params["closed"] == "true"
+        assert request.url.params["order"] == "closedTime"
+        assert request.url.params["ascending"] == "false"
+        return httpx.Response(200, json={"markets": [raw_market]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = PolymarketProvider(client)
+    markets = [
+        market async for market in provider.list_recently_resolved_markets(limit=1)
+    ]
+    await client.aclose()
+
+    assert [market.id for market in markets] == ["polymarket:newest"]
+
+
+async def test_daily_price_history_requests_daily_fidelity() -> None:
+    market = Market(
+        provider="polymarket",
+        external_id="market-1",
+        question="Will this have daily history?",
+        market_type=MarketType.BINARY,
+        status=MarketStatus.CLOSED,
+        yes_outcome_id="yes-token",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/prices-history"
+        assert request.url.params["interval"] == "1d"
+        assert request.url.params["fidelity"] == "1440"
+        return httpx.Response(200, json={"history": []})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = PolymarketProvider(client)
+    snapshots = await provider.price_history(
+        market,
+        start=datetime(2026, 8, 1, tzinfo=UTC),
+        end=datetime(2026, 8, 2, tzinfo=UTC),
+        interval="1d",
+    )
+    await client.aclose()
+
+    assert snapshots == []
