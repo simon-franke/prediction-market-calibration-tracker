@@ -24,17 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 @st.cache_data(ttl=60, show_spinner="Loading resolved forecasts…")
-def _load_forecasts(database_url: str) -> pd.DataFrame:
-    return prepare_forecasts(load_resolved_forecasts(database_url))
+def _load_forecasts(
+    database_url: str | None,
+    supabase_url: str | None,
+    supabase_service_role_key: str | None,
+) -> pd.DataFrame:
+    return prepare_forecasts(
+        load_resolved_forecasts(
+            database_url,
+            supabase_url=supabase_url,
+            supabase_service_role_key=supabase_service_role_key,
+        )
+    )
 
 
-def _database_url() -> str | None:
-    """Read the database URL from the environment or Streamlit Cloud secrets."""
-    if database_url := os.environ.get("DATABASE_URL"):
-        return database_url
+def _setting(name: str) -> str | None:
+    """Read a setting from the environment or Streamlit Cloud secrets."""
+    if value := os.environ.get(name):
+        return value
 
     try:
-        return st.secrets.get("DATABASE_URL")
+        return st.secrets.get(name)
     except FileNotFoundError:
         return None
 
@@ -44,17 +54,19 @@ def render() -> None:
     st.title("Prediction Market Calibration")
     st.caption("When the market says 70%, how often does it happen?")
 
-    database_url = _database_url()
-    if not database_url:
-        st.error("Set DATABASE_URL before starting the dashboard.")
+    database_url = _setting("DATABASE_URL")
+    supabase_url = _setting("SUPABASE_URL")
+    supabase_service_role_key = _setting("SUPABASE_SERVICE_ROLE_KEY")
+    if not database_url and not (supabase_url and supabase_service_role_key):
+        st.error("Set DATABASE_URL or Supabase API credentials before starting the dashboard.")
         st.stop()
 
     try:
-        forecasts = _load_forecasts(database_url)
+        forecasts = _load_forecasts(database_url, supabase_url, supabase_service_role_key)
     except Exception as error:
         logger.exception("dashboard data load failed")
         st.error(
-            "The dashboard could not load PostgreSQL data. Check DATABASE_URL and database access."
+            "The dashboard could not load its data. Check its database or Supabase credentials."
         )
         st.caption(f"Error: {error}")
         st.stop()

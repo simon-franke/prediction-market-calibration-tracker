@@ -11,7 +11,7 @@ from typing import Protocol
 
 from prediction_market_tracker.ingestion import CollectionReport, SnapshotCollector
 from prediction_market_tracker.providers import PolymarketProvider
-from prediction_market_tracker.storage import PostgresRepository
+from prediction_market_tracker.storage import PostgresRepository, SupabaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +22,27 @@ class Collector(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class WorkerSettings:
-    database_url: str
+    database_url: str | None = None
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
     interval_seconds: int = 900
     create_schema: bool = False
 
     @classmethod
     def from_environment(cls, *, create_schema: bool = False) -> "WorkerSettings":
         database_url = os.environ.get("DATABASE_URL")
-        if not database_url:
-            raise RuntimeError("DATABASE_URL must be set before starting the collection worker")
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        uses_supabase = supabase_url or supabase_service_role_key
+        if uses_supabase and not (supabase_url and supabase_service_role_key):
+            raise RuntimeError(
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set together"
+            )
+        if not database_url and not uses_supabase:
+            raise RuntimeError(
+                "Set DATABASE_URL or both SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY "
+                "before starting the collection worker"
+            )
 
         raw_interval = os.environ.get("CALIBRATION_INTERVAL_SECONDS", "900")
         try:
@@ -42,6 +54,8 @@ class WorkerSettings:
 
         return cls(
             database_url=database_url,
+            supabase_url=supabase_url,
+            supabase_service_role_key=supabase_service_role_key,
             interval_seconds=interval_seconds,
             create_schema=create_schema,
         )
@@ -105,7 +119,17 @@ async def run_worker(
     stop_event: asyncio.Event | None = None,
 ) -> None:
     """Create infrastructure, run collection, and always release network resources."""
-    repository = PostgresRepository.from_url(settings.database_url)
+    if settings.supabase_url and settings.supabase_service_role_key:
+        if settings.create_schema:
+            raise RuntimeError(
+                "Supabase schema setup is manual: run supabase/schema.sql in the SQL Editor first"
+            )
+        repository = SupabaseRepository(settings.supabase_url, settings.supabase_service_role_key)
+    else:
+        if settings.database_url is None:
+            raise RuntimeError("DATABASE_URL must be set for PostgreSQL collection")
+        repository = PostgresRepository.from_url(settings.database_url)
+
     provider = PolymarketProvider()
     try:
         if settings.create_schema:

@@ -59,8 +59,23 @@ def test_worker_settings_read_the_environment(monkeypatch: pytest.MonkeyPatch) -
     assert settings.create_schema is True
 
 
-def test_worker_settings_reject_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_worker_settings_supports_supabase_api_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "secret")
 
-    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+    settings = WorkerSettings.from_environment()
+
+    assert settings.database_url is None
+    assert settings.supabase_url == "https://example.supabase.co"
+
+
+def test_worker_settings_reject_missing_storage_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="DATABASE_URL or both SUPABASE"):
         WorkerSettings.from_environment()

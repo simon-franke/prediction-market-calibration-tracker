@@ -106,30 +106,38 @@ Supabase, and Streamlit Community Cloud:
 GitHub Actions (every 15 minutes) -> Supabase Postgres <- Streamlit Community Cloud
 ```
 
-The scheduled collector is defined in `.github/workflows/collect.yml`. It runs
-`calibration-worker --create-schema --once`, so schema creation is safe on a first run and
-later executions collect a single snapshot batch without overlapping another workflow run.
+The scheduled collector is defined in `.github/workflows/collect.yml`. It communicates with
+Supabase's HTTPS Data API, rather than a raw PostgreSQL connection, so no IPv4 add-on or
+connection-pooler configuration is required.
 
-1. Create a Supabase project and, in **Connect**, copy the **Session pooler** PostgreSQL
-   connection string (port `5432`). Replace `[YOUR-PASSWORD]` with the database password.
-   Do not use the direct connection string: on Supabase Free it is IPv6-only, whereas
-   GitHub Actions needs the IPv4-compatible session pooler.
-2. In the GitHub repository, create an Actions secret named `DATABASE_URL` containing that
-   connection string. Run **Collect market snapshots** manually once from the Actions tab to
-   initialize the schema and verify the collector.
-3. In Streamlit Community Cloud, deploy
+1. In Supabase, open the **SQL Editor**, create a new query, paste the contents of
+   `supabase/schema.sql`, and run it once. This creates the tracker tables and enables
+   row-level security.
+2. In **Settings -> API Keys**, copy the **Project URL** and a server-only **secret key**
+   (called `service_role` in legacy projects). Do not use the public `anon`/publishable key.
+3. In the GitHub repository, create these Actions secrets:
+
+   ```text
+   SUPABASE_URL=<Project URL>
+   SUPABASE_SERVICE_ROLE_KEY=<secret key>
+   ```
+
+   Run **Collect market snapshots** manually once from the Actions tab to verify the
+   collector.
+4. In Streamlit Community Cloud, deploy
    `src/prediction_market_tracker/dashboard/app.py` from this repository. In **Advanced
    settings -> Secrets**, add:
 
    ```toml
-   DATABASE_URL = "postgresql://..."
+   SUPABASE_URL = "https://your-project-ref.supabase.co"
+   SUPABASE_SERVICE_ROLE_KEY = "your-server-only-secret-key"
    ```
 
-   The dashboard reads this secret directly in Community Cloud and continues to use the
-   `DATABASE_URL` environment variable in Docker and local development.
+   The dashboard reads these server-side secrets directly in Community Cloud. Docker and
+   local PostgreSQL deployments can continue using `DATABASE_URL`.
 
-Keep the database URL only in GitHub Actions secrets and Streamlit secrets—never commit it
-to `.env.example`, source code, or the repository. This is intended for a hobby/student
+Keep the secret key only in GitHub Actions secrets and Streamlit secrets—never commit it to
+`.env.example`, source code, or the repository. This is intended for a hobby/student
 deployment: GitHub Actions schedules can be delayed, and Supabase Free has a 500 MB database
 limit with no managed backups.
 
