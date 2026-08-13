@@ -141,6 +141,15 @@ Keep the secret key only in GitHub Actions secrets and Streamlit secrets—never
 deployment: GitHub Actions schedules can be delayed, and Supabase Free has a 500 MB database
 limit with no managed backups.
 
+### Populate the dashboard immediately
+
+The recurring collector only records forecasts from markets that are open today, so it takes
+time before those markets resolve and become scoreable. To load historical daily Polymarket
+prices for recently resolved binary markets now, run **Backfill historical forecasts** from the
+repository's GitHub Actions tab. Its default limit is 25 markets; run it once and use the
+dashboard's **Refresh data** button after it completes. The backfill is idempotent, so reruns
+do not create duplicate snapshots.
+
 ## Docker Compose
 
 Docker Compose starts PostgreSQL, a one-shot schema bootstrap, the scheduled worker, the

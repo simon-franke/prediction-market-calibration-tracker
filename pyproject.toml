@@ -32,6 +32,7 @@ dev = [
 calibration-tracker = "prediction_market_tracker.main:main"
 calibration-bootstrap = "prediction_market_tracker.bootstrap:main"
 calibration-worker = "prediction_market_tracker.worker:main"
+calibration-backfill = "prediction_market_tracker.backfill:main"
 calibration-dashboard = "prediction_market_tracker.dashboard.app:main"
 
 [tool.pytest.ini_options]

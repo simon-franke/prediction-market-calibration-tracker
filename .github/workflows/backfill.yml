@@ -1,0 +1,36 @@
+name: Backfill historical forecasts
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Number of recently closed markets to backfill"
+        required: true
+        default: "25"
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-history-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the tracker
+        run: python -m pip install .
+      - name: Backfill historical forecasts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKFILL_LIMIT: ${{ inputs.limit }}
+          LOG_LEVEL: INFO
+        run: calibration-backfill --limit "$BACKFILL_LIMIT"

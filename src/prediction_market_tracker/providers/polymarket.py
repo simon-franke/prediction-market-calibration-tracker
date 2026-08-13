@@ -85,7 +85,7 @@ class PolymarketProvider:
         )
 
     async def price_history(
-        self, market: Market, *, start: datetime, end: datetime
+        self, market: Market, *, start: datetime, end: datetime, interval: str = "1h"
     ) -> list[ForecastSnapshot]:
         if market.yes_outcome_id is None:
             return []
@@ -96,7 +96,7 @@ class PolymarketProvider:
                 "market": market.yes_outcome_id,
                 "startTs": int(start.timestamp()),
                 "endTs": int(end.timestamp()),
-                "interval": "1h",
+                "interval": interval,
             },
         )
         response.raise_for_status()

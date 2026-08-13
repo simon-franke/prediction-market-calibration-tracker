@@ -119,20 +119,15 @@ async def run_worker(
     stop_event: asyncio.Event | None = None,
 ) -> None:
     """Create infrastructure, run collection, and always release network resources."""
-    if settings.supabase_url and settings.supabase_service_role_key:
-        if settings.create_schema:
-            raise RuntimeError(
-                "Supabase schema setup is manual: run supabase/schema.sql in the SQL Editor first"
-            )
-        repository = SupabaseRepository(settings.supabase_url, settings.supabase_service_role_key)
-    else:
-        if settings.database_url is None:
-            raise RuntimeError("DATABASE_URL must be set for PostgreSQL collection")
-        repository = PostgresRepository.from_url(settings.database_url)
-
+    repository = _repository_from_settings(settings)
     provider = PolymarketProvider()
     try:
         if settings.create_schema:
+            if not isinstance(repository, PostgresRepository):
+                raise RuntimeError(
+                    "Supabase schema setup is manual: run supabase/schema.sql in the SQL Editor "
+                    "first"
+                )
             await repository.create_schema()
 
         worker = ScheduledWorker(
@@ -149,6 +144,14 @@ async def run_worker(
     finally:
         await provider.aclose()
         await repository.close()
+
+
+def _repository_from_settings(settings: WorkerSettings) -> PostgresRepository | SupabaseRepository:
+    if settings.supabase_url and settings.supabase_service_role_key:
+        return SupabaseRepository(settings.supabase_url, settings.supabase_service_role_key)
+    if settings.database_url is None:
+        raise RuntimeError("DATABASE_URL must be set for PostgreSQL collection")
+    return PostgresRepository.from_url(settings.database_url)
 
 
 def main() -> None:
